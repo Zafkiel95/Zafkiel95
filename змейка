@@ -1,0 +1,165 @@
+#include <iostream>
+#include <vector>
+#include <deque>
+#include <thread>
+#include <chrono>
+#include <cstdlib>
+#include <ctime>
+#include <algorithm>
+
+using namespace std;
+
+struct Cell {
+    int x, y;
+};
+
+enum Dir { UP, DOWN, LEFT, RIGHT };
+
+const int W = 30;
+const int H = 20;
+
+void clearScreen() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
+
+void draw(const vector<vector<char>>& field, int score) {
+    clearScreen();
+    cout << "Score: " << score << "\n";
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            cout << field[y][x];
+        }
+        cout << "\n";
+    }
+}
+
+// Проверка, занята ли клетка телом змейки
+bool isSnakeCell(const deque<Cell>& snake, int x, int y) {
+    for (auto& c : snake)
+        if (c.x == x && c.y == y) return true;
+    return false;
+}
+
+// Простейший ИИ: тянется к еде, стараясь не врезаться
+Dir chooseDirection(const deque<Cell>& snake, const Cell& food) {
+    Cell head = snake.front();
+    vector<Dir> dirs;
+
+    // Жадно: сначала по оси X, потом по оси Y
+    if (food.x < head.x) dirs.push_back(LEFT);
+    if (food.x > head.x) dirs.push_back(RIGHT);
+    if (food.y < head.y) dirs.push_back(UP);
+    if (food.y > head.y) dirs.push_back(DOWN);
+
+    // Добавим запасные варианты, если прямой путь опасен
+    vector<Dir> all = {UP, DOWN, LEFT, RIGHT};
+    for (auto d : all)
+        if (find(dirs.begin(), dirs.end(), d) == dirs.end())
+            dirs.push_back(d);
+
+    // Проверяем по приоритету
+    for (auto d : dirs) {
+        int nx = head.x;
+        int ny = head.y;
+        if (d == LEFT)  nx--;
+        if (d == RIGHT) nx++;
+        if (d == UP)    ny--;
+        if (d == DOWN)  ny++;
+
+        // Столкновение со стеной
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        // Столкновение с собой
+        if (isSnakeCell(snake, nx, ny)) continue;
+
+        return d;
+    }
+
+    // Если всё плохо — просто что-то вернём (скорее всего, смерть)
+    return dirs[0];
+}
+
+int main() {
+    srand((unsigned)time(nullptr));
+
+    // Поле
+    vector<vector<char>> field(H, vector<char>(W, ' '));
+
+    // Змейка
+    deque<Cell> snake;
+    snake.push_back({W / 2, H / 2});
+
+    // Начальная еда
+    Cell food;
+    auto placeFood = [&]() {
+        while (true) {
+            food.x = rand() % W;
+            food.y = rand() % H;
+            if (!isSnakeCell(snake, food.x, food.y)) break;
+        }
+    };
+    placeFood();
+
+    int score = 0;
+    bool alive = true;
+
+    while (alive) {
+        // Обновляем поле
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x)
+                field[y][x] = ' ';
+
+        // Рисуем еду
+        field[food.y][food.x] = '@';
+
+        // Рисуем змейку
+        bool first = true;
+        for (auto& c : snake) {
+            field[c.y][c.x] = first ? 'O' : 'o';
+            first = false;
+        }
+
+        draw(field, score);
+
+        // ИИ выбирает направление
+        Dir dir = chooseDirection(snake, food);
+        Cell head = snake.front();
+        Cell next = head;
+
+        if (dir == LEFT)  next.x--;
+        if (dir == RIGHT) next.x++;
+        if (dir == UP)    next.y--;
+        if (dir == DOWN)  next.y++;
+
+        // Проверка столкновений
+        if (next.x < 0 || next.x >= W || next.y < 0 || next.y >= H) {
+            alive = false;
+            break;
+        }
+        if (isSnakeCell(snake, next.x, next.y)) {
+            alive = false;
+            break;
+        }
+
+        // Движение
+        snake.push_front(next);
+
+        // Съела еду?
+        if (next.x == food.x && next.y == food.y) {
+            score++;
+            placeFood(); // не удаляем хвост — змейка растёт
+        } else {
+            snake.pop_back(); // обычный шаг
+        }
+
+        this_thread::sleep_for(chrono::milliseconds(120));
+    }
+
+    clearScreen();
+    cout << "Game over. Final score: " << score << "\n";
+
+    return 0;
+}
